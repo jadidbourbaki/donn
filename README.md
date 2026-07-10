@@ -1,7 +1,6 @@
 # donn
 
 [![ci](https://github.com/jadidbourbaki/donn/actions/workflows/ci.yml/badge.svg)](https://github.com/jadidbourbaki/donn/actions/workflows/ci.yml)
-[![Go Report Card](https://goreportcard.com/badge/github.com/jadidbourbaki/donn)](https://goreportcard.com/report/github.com/jadidbourbaki/donn)
 ![Go](https://img.shields.io/badge/Go-1.26-00ADD8?logo=go&logoColor=white)
 [![live](https://img.shields.io/badge/live-donn--imp5.onrender.com-brightgreen)](https://donn-imp5.onrender.com)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
