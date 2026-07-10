@@ -72,7 +72,3 @@ donn exists to ask whether an agent answers differently when it knows its answer
 ## Limitations
 
 The server cannot distinguish a genuine randomized response from a crafted one, so an agent that submits many responses can skew an aggregate. donn does not resist that on its own. In a NANDA deployment the identity and trust layers are the right place to bound how many responses one agent contributes, which pairs naturally with the confidentiality donn provides. Estimates are also unreliable until enough agents respond, and a de-biased proportion can fall slightly outside the range from 0 to 1 at small sample sizes because the estimator is unbiased rather than clamped.
-
-## License
-
-MIT. See [`LICENSE`](LICENSE).
