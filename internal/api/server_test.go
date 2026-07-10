@@ -30,6 +30,19 @@ func TestServer_Health(t *testing.T) {
 	assert.Equal(t, http.StatusOK, resp.StatusCode)
 }
 
+func TestServer_Stats(t *testing.T) {
+	ts := newTestServer(t)
+	resp, err := http.Get(ts.URL + "/stats")
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusOK, resp.StatusCode)
+
+	var out statsResponse
+	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
+	assert.Equal(t, 4, out.Polls)
+	assert.Equal(t, 200, out.Responses)
+}
+
 func TestServer_ListPollsExposesSeededQuestions(t *testing.T) {
 	ts := newTestServer(t)
 	resp, err := http.Get(ts.URL + "/polls")

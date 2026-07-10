@@ -30,6 +30,7 @@ func NewServer(store *survey.Store) *Server {
 	s.router.Use(middleware.RequestID, middleware.Recoverer)
 	s.router.Get("/", s.home)
 	s.router.Get("/health", s.health)
+	s.router.Get("/stats", s.stats)
 	s.router.Get("/polls", s.listPolls)
 	s.router.Post("/polls", s.createPoll)
 	s.router.Get("/polls/{id}", s.getPoll)
@@ -46,6 +47,11 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 type healthResponse struct {
 	Status string `json:"status"`
+}
+
+type statsResponse struct {
+	Polls     int `json:"polls"`
+	Responses int `json:"responses"`
 }
 
 type pollResponse struct {
@@ -115,6 +121,15 @@ type errorResponse struct {
 
 func (s *Server) health(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, healthResponse{Status: "ok"})
+}
+
+func (s *Server) stats(w http.ResponseWriter, _ *http.Request) {
+	polls := s.store.List()
+	total := 0
+	for _, p := range polls {
+		total += p.Responses
+	}
+	writeJSON(w, http.StatusOK, statsResponse{Polls: len(polls), Responses: total})
 }
 
 func (s *Server) listPolls(w http.ResponseWriter, _ *http.Request) {
