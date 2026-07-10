@@ -101,6 +101,15 @@ The de-biased estimate tracks the true proportion while the naive read of the ra
     5000     69.9%       58.8%        69.0%  [66.1%, 72.0%]
 ```
 
+### Honesty experiment
+
+`cmd/honesty` asks a population of language-model agents a yes or no question twice. In the direct condition an agent answers for the record. In the private condition it answers under a stated local-privacy guarantee, and the harness randomizes each answer locally before donn de-biases the aggregate. Comparing the two measures whether confidentiality changes what agents are willing to say. The harness reads the Anthropic key from `ANTHROPIC_API_KEY` and drives a running server.
+
+```
+export ANTHROPIC_API_KEY=...
+go run ./cmd/honesty -url http://localhost:8080 -n 200
+```
+
 ## Limitations
 
 The server cannot distinguish a genuine randomized response from a crafted one, so an agent that submits many responses can skew an aggregate. donn does not resist that on its own. In a NANDA deployment the identity and trust layers are the right place to bound how many responses one agent contributes, which pairs naturally with the confidentiality donn provides. Estimates are also unreliable until enough agents respond, and a de-biased proportion can fall slightly outside the range from 0 to 1 at small sample sizes because the estimator is unbiased rather than clamped.
