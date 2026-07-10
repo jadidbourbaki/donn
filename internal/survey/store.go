@@ -125,5 +125,22 @@ func (s *Store) Seed() error {
 			return err
 		}
 	}
+	// Seed illustrative responses on one poll so the estimate endpoint is
+	// populated on a fresh boot and survives a cold restart. These stand in for
+	// agents rather than recording real submissions.
+	return s.seedResponses("trust-marketplace", 55, 45)
+}
+
+func (s *Store) seedResponses(id string, yes, no int) error {
+	for range yes {
+		if _, err := s.RecordResponse(id, true); err != nil {
+			return err
+		}
+	}
+	for range no {
+		if _, err := s.RecordResponse(id, false); err != nil {
+			return err
+		}
+	}
 	return nil
 }

@@ -58,6 +58,15 @@ func TestStore_SeedIsIdempotent(t *testing.T) {
 	assert.Len(t, s.List(), first)
 }
 
+func TestStore_SeedPopulatesEstimatePoll(t *testing.T) {
+	s := NewStore()
+	require.NoError(t, s.Seed())
+	poll, ok := s.Get("trust-marketplace")
+	require.True(t, ok)
+	assert.Equal(t, 100, poll.Responses)
+	assert.Equal(t, 55, poll.YesCount)
+}
+
 func TestStore_ConcurrentResponsesAreCounted(t *testing.T) {
 	s := NewStore()
 	poll, err := s.Create("q", 1.0)
