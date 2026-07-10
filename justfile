@@ -28,3 +28,7 @@ fmt:
 # Run the service locally on PORT (default 8080).
 run:
     go run ./cmd/donn
+
+# Run the recovery experiment against a running server.
+experiment url="http://localhost:8080":
+    go run ./cmd/experiment -url {{url}}

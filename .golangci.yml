@@ -25,3 +25,7 @@ linters:
           - bodyclose
           - errcheck
           - gosec
+      # The experiment harness uses math/rand for simulation, not security.
+      - path: experiment
+        linters:
+          - gosec

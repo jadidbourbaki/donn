@@ -82,6 +82,25 @@ docker build -t donn .
 docker run -p 8080:8080 donn
 ```
 
+### Recovery experiment
+
+`cmd/experiment` drives a running server with a population of simulated agents whose true answers match a known proportion. Each agent randomizes its answer locally and submits it, and the harness reads the de-biased estimate at growing sample sizes. Start the server, then run the experiment against it.
+
+```
+just run
+just experiment
+```
+
+The de-biased estimate tracks the true proportion while the naive read of the randomized responses stays biased toward one half, and the confidence interval narrows as the sample grows. A representative run at a true proportion of 70 percent and epsilon 1:
+
+```
+       n      true       naive    de-biased  95% CI
+      50     66.0%       60.0%        71.6%  [42.3%, 101.0%]
+     200     71.0%       56.0%        63.0%  [48.1%, 77.9%]
+    1000     69.6%       60.1%        71.9%  [65.3%, 78.4%]
+    5000     69.9%       58.8%        69.0%  [66.1%, 72.0%]
+```
+
 ## Limitations
 
 The server cannot distinguish a genuine randomized response from a crafted one, so an agent that submits many responses can skew an aggregate. donn does not resist that on its own. In a NANDA deployment the identity and trust layers are the right place to bound how many responses one agent contributes, which pairs naturally with the confidentiality donn provides. Estimates are also unreliable until enough agents respond, and a de-biased proportion can fall slightly outside the range from 0 to 1 at small sample sizes because the estimator is unbiased rather than clamped.
