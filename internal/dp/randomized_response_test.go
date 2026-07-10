@@ -93,3 +93,42 @@ func TestEstimateProportion_RejectsBadCounts(t *testing.T) {
 	_, err = EstimateProportion(5, 3, 1.0)
 	assert.Error(t, err)
 }
+
+func TestKRRTruthfulProbability_MatchesBinaryAtK2(t *testing.T) {
+	binary, err := TruthfulProbability(1.0)
+	require.NoError(t, err)
+	krr, err := KRRTruthfulProbability(1.0, 2)
+	require.NoError(t, err)
+	assert.InDelta(t, binary, krr, 1e-12)
+}
+
+func TestKRRTruthfulProbability_RejectsBadArgs(t *testing.T) {
+	_, err := KRRTruthfulProbability(1.0, 1)
+	assert.Error(t, err)
+	_, err = KRRTruthfulProbability(0, 3)
+	assert.Error(t, err)
+}
+
+func TestEstimateCategories_ProportionsAreDebiasedAndSumNearOne(t *testing.T) {
+	est, err := EstimateCategories([]int{50, 30, 20}, 1.0)
+	require.NoError(t, err)
+	require.Len(t, est, 3)
+
+	var sum float64
+	for _, c := range est {
+		sum += c.Proportion
+		assert.Less(t, c.CILow, c.CIHigh)
+	}
+	// De-biased proportions of a full partition sum to 1.
+	assert.InDelta(t, 1.0, sum, 1e-9)
+	// The most-reported option keeps the largest de-biased proportion.
+	assert.Greater(t, est[0].Proportion, est[1].Proportion)
+	assert.Greater(t, est[1].Proportion, est[2].Proportion)
+}
+
+func TestEstimateCategories_RejectsBadInput(t *testing.T) {
+	_, err := EstimateCategories([]int{5}, 1.0)
+	assert.Error(t, err)
+	_, err = EstimateCategories([]int{0, 0, 0}, 1.0)
+	assert.Error(t, err)
+}

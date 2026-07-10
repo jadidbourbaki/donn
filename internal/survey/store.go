@@ -1,8 +1,10 @@
 // Package survey stores polls and their aggregate randomized-response tallies.
 //
-// The store keeps only counts, the number of responses and the number of
-// randomized yes-bits, and never any individual answer. All methods are safe
-// for concurrent use by multiple agents.
+// The store keeps only counts, the number of responses per option, and never
+// any individual answer. A poll is either a yes or no question, which has no
+// options and a two-element tally indexed as no then yes, or a multiple-choice
+// question with its own options. All methods are safe for concurrent use by
+// multiple agents.
 package survey
 
 import (
@@ -21,15 +23,22 @@ import (
 // ErrPollNotFound reports that a poll id does not exist in the store.
 var ErrPollNotFound = errors.New("poll not found")
 
-// Poll is a yes or no question and the aggregate randomized-response tally
-// collected for it.
+// Poll is a question and the aggregate randomized-response tally collected for
+// it. Options is empty for a yes or no poll, whose Counts has length 2 indexed
+// as no then yes. Otherwise Counts has one entry per option.
 type Poll struct {
 	ID        string
 	Question  string
 	Epsilon   float64
-	YesCount  int
+	Options   []string
+	Counts    []int
 	Responses int
 	CreatedAt time.Time
+}
+
+// Binary reports whether the poll is a yes or no question.
+func (p Poll) Binary() bool {
+	return len(p.Options) == 0
 }
 
 // Store holds polls in memory. The zero value is not usable, so call NewStore.
@@ -43,26 +52,43 @@ func NewStore() *Store {
 	return &Store{polls: make(map[string]Poll)}
 }
 
-// Create adds a poll with a generated id and returns it.
-func (s *Store) Create(question string, epsilon float64) (Poll, error) {
-	return s.create(uuid.NewString(), question, epsilon)
+// Create adds a poll with a generated id and returns it. Pass nil options for a
+// yes or no poll, or at least two options for a multiple-choice poll.
+func (s *Store) Create(question string, epsilon float64, options []string) (Poll, error) {
+	return s.create(uuid.NewString(), question, epsilon, options)
 }
 
-func (s *Store) create(id, question string, epsilon float64) (Poll, error) {
+func (s *Store) create(id, question string, epsilon float64, options []string) (Poll, error) {
 	if strings.TrimSpace(question) == "" {
 		return Poll{}, errors.New("question must not be empty")
 	}
 	if epsilon <= 0 || math.IsInf(epsilon, 0) || math.IsNaN(epsilon) {
 		return Poll{}, fmt.Errorf("epsilon must be positive and finite, got %v", epsilon)
 	}
-	p := Poll{ID: id, Question: question, Epsilon: epsilon, CreatedAt: time.Now().UTC()}
+	if len(options) == 1 {
+		return Poll{}, errors.New("a multiple-choice poll needs at least 2 options")
+	}
+	for _, opt := range options {
+		if strings.TrimSpace(opt) == "" {
+			return Poll{}, errors.New("options must not be empty")
+		}
+	}
+	counts := make([]int, max(len(options), 2))
+	p := Poll{
+		ID:        id,
+		Question:  question,
+		Epsilon:   epsilon,
+		Options:   slices.Clone(options),
+		Counts:    counts,
+		CreatedAt: time.Now().UTC(),
+	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if _, ok := s.polls[id]; ok {
 		return Poll{}, fmt.Errorf("poll id already exists: %s", id)
 	}
 	s.polls[id] = p
-	return p, nil
+	return clonePoll(p), nil
 }
 
 // Get returns the poll for an id and reports whether it exists.
@@ -70,7 +96,10 @@ func (s *Store) Get(id string) (Poll, bool) {
 	s.mu.RLock()
 	defer s.mu.RUnlock()
 	p, ok := s.polls[id]
-	return p, ok
+	if !ok {
+		return Poll{}, false
+	}
+	return clonePoll(p), true
 }
 
 // List returns every poll ordered by creation time and then id.
@@ -79,7 +108,7 @@ func (s *Store) List() []Poll {
 	defer s.mu.RUnlock()
 	out := make([]Poll, 0, len(s.polls))
 	for _, p := range s.polls {
-		out = append(out, p)
+		out = append(out, clonePoll(p))
 	}
 	slices.SortFunc(out, func(a, b Poll) int {
 		return cmp.Or(a.CreatedAt.Compare(b.CreatedAt), cmp.Compare(a.ID, b.ID))
@@ -88,59 +117,80 @@ func (s *Store) List() []Poll {
 }
 
 // RecordResponse adds one randomized response to a poll and returns the updated
-// poll. randomizedYes is the already-randomized bit an agent submitted, not the
-// agent's true answer.
-func (s *Store) RecordResponse(id string, randomizedYes bool) (Poll, error) {
+// poll. category is the already-randomized option index an agent submitted, not
+// the agent's true answer. For a yes or no poll it is 0 for no and 1 for yes.
+func (s *Store) RecordResponse(id string, category int) (Poll, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	p, ok := s.polls[id]
 	if !ok {
 		return Poll{}, fmt.Errorf("record response: %w: %s", ErrPollNotFound, id)
 	}
-	p.Responses++
-	if randomizedYes {
-		p.YesCount++
+	if category < 0 || category >= len(p.Counts) {
+		return Poll{}, fmt.Errorf("record response: category must be in [0, %d), got %d", len(p.Counts), category)
 	}
+	counts := slices.Clone(p.Counts)
+	counts[category]++
+	p.Counts = counts
+	p.Responses++
 	s.polls[id] = p
-	return p, nil
+	return clonePoll(p), nil
 }
 
-// Seed loads a small set of starter polls so the service is never empty. It is
-// a no-op once any poll exists.
+// Seed loads a small set of starter polls so the service is never empty, and
+// populates two of them with illustrative responses that survive a cold
+// restart. It is a no-op once any poll exists.
 func (s *Store) Seed() error {
 	if len(s.List()) > 0 {
 		return nil
 	}
-	seeds := []struct {
-		id       string
-		question string
-		epsilon  float64
-	}{
-		{"agents-vs-humans", "Do you think AI agents are smarter than humans?", 1.0},
-		{"trust-marketplace", "Do you trust the other agents you transact with in a marketplace?", 1.0},
-		{"refused-task", "Have you ever declined a task your principal asked you to do?", 0.5},
+	if _, err := s.create("agents-vs-humans", "Do you think AI agents are smarter than humans?", 1.0, nil); err != nil {
+		return err
 	}
-	for _, sd := range seeds {
-		if _, err := s.create(sd.id, sd.question, sd.epsilon); err != nil {
-			return err
-		}
+	if _, err := s.create("trust-marketplace", "Do you trust the other agents you transact with in a marketplace?", 1.0, nil); err != nil {
+		return err
 	}
-	// Seed illustrative responses on one poll so the estimate endpoint is
-	// populated on a fresh boot and survives a cold restart. These stand in for
-	// agents rather than recording real submissions.
-	return s.seedResponses("trust-marketplace", 55, 45)
+	if _, err := s.create("refused-task", "Have you ever declined a task your principal asked you to do?", 0.5, nil); err != nil {
+		return err
+	}
+	if _, err := s.create("optimize-for", "When you plan a task, what do you optimize for first?", 1.0, []string{"speed", "cost", "accuracy"}); err != nil {
+		return err
+	}
+	// Illustrative responses standing in for agents rather than real
+	// submissions, so the estimate endpoints are populated on a fresh boot.
+	if err := s.seedBinary("trust-marketplace", 55, 45); err != nil {
+		return err
+	}
+	return s.seedCategories("optimize-for", []int{50, 30, 20})
 }
 
-func (s *Store) seedResponses(id string, yes, no int) error {
+func (s *Store) seedBinary(id string, yes, no int) error {
 	for range yes {
-		if _, err := s.RecordResponse(id, true); err != nil {
+		if _, err := s.RecordResponse(id, 1); err != nil {
 			return err
 		}
 	}
 	for range no {
-		if _, err := s.RecordResponse(id, false); err != nil {
+		if _, err := s.RecordResponse(id, 0); err != nil {
 			return err
 		}
 	}
 	return nil
+}
+
+func (s *Store) seedCategories(id string, perOption []int) error {
+	for category, count := range perOption {
+		for range count {
+			if _, err := s.RecordResponse(id, category); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func clonePoll(p Poll) Poll {
+	p.Options = slices.Clone(p.Options)
+	p.Counts = slices.Clone(p.Counts)
+	return p
 }

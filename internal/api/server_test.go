@@ -102,6 +102,59 @@ func TestServer_UnknownPollIs404(t *testing.T) {
 	assert.Equal(t, http.StatusNotFound, resp.StatusCode)
 }
 
+func TestServer_MultipleChoiceFlow(t *testing.T) {
+	ts := newTestServer(t)
+
+	choice := 2
+	body, err := json.Marshal(submitRequest{Choice: &choice})
+	require.NoError(t, err)
+	resp, err := http.Post(
+		ts.URL+"/polls/optimize-for/responses",
+		"application/json",
+		bytes.NewReader(body),
+	)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusAccepted, resp.StatusCode)
+
+	est, err := http.Get(ts.URL + "/polls/optimize-for/estimate")
+	require.NoError(t, err)
+	defer est.Body.Close()
+
+	var out estimateResponse
+	require.NoError(t, json.NewDecoder(est.Body).Decode(&out))
+	assert.Len(t, out.Categories, 3)
+	assert.Equal(t, "speed", out.Categories[0].Option)
+	assert.Nil(t, out.Estimate)
+}
+
+func TestServer_MultipleChoiceRejectsBoolResponse(t *testing.T) {
+	ts := newTestServer(t)
+	yes := true
+	body, err := json.Marshal(submitRequest{Response: &yes})
+	require.NoError(t, err)
+	resp, err := http.Post(
+		ts.URL+"/polls/optimize-for/responses",
+		"application/json",
+		bytes.NewReader(body),
+	)
+	require.NoError(t, err)
+	defer resp.Body.Close()
+	assert.Equal(t, http.StatusBadRequest, resp.StatusCode)
+}
+
+func TestServer_BinaryEstimateIncludesRawRate(t *testing.T) {
+	ts := newTestServer(t)
+	est, err := http.Get(ts.URL + "/polls/trust-marketplace/estimate")
+	require.NoError(t, err)
+	defer est.Body.Close()
+
+	var out estimateResponse
+	require.NoError(t, json.NewDecoder(est.Body).Decode(&out))
+	require.NotNil(t, out.Estimate)
+	assert.InDelta(t, 0.55, out.Estimate.RawRate, 1e-9)
+}
+
 func TestServer_CreatePoll(t *testing.T) {
 	ts := newTestServer(t)
 	eps := 2.0

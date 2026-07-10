@@ -10,9 +10,11 @@ import (
 
 func TestStore_CreateAndGet(t *testing.T) {
 	s := NewStore()
-	poll, err := s.Create("Do agents dream?", 1.0)
+	poll, err := s.Create("Do agents dream?", 1.0, nil)
 	require.NoError(t, err)
 	assert.NotEmpty(t, poll.ID)
+	assert.True(t, poll.Binary())
+	assert.Len(t, poll.Counts, 2)
 
 	got, ok := s.Get(poll.ID)
 	require.True(t, ok)
@@ -20,32 +22,55 @@ func TestStore_CreateAndGet(t *testing.T) {
 	assert.Equal(t, "Do agents dream?", got.Question)
 }
 
+func TestStore_CreateMultipleChoice(t *testing.T) {
+	s := NewStore()
+	poll, err := s.Create("Pick one", 1.0, []string{"a", "b", "c"})
+	require.NoError(t, err)
+	assert.False(t, poll.Binary())
+	assert.Len(t, poll.Counts, 3)
+}
+
 func TestStore_CreateRejectsBadInput(t *testing.T) {
 	s := NewStore()
-	_, err := s.Create("   ", 1.0)
+	_, err := s.Create("   ", 1.0, nil)
 	assert.Error(t, err)
-	_, err = s.Create("ok", 0)
+	_, err = s.Create("ok", 0, nil)
 	assert.Error(t, err)
-	_, err = s.Create("ok", -1)
+	_, err = s.Create("ok", -1, nil)
+	assert.Error(t, err)
+	_, err = s.Create("ok", 1.0, []string{"only-one"})
+	assert.Error(t, err)
+	_, err = s.Create("ok", 1.0, []string{"a", "  "})
 	assert.Error(t, err)
 }
 
 func TestStore_RecordResponseTallies(t *testing.T) {
 	s := NewStore()
-	poll, err := s.Create("q", 1.0)
+	poll, err := s.Create("q", 1.0, nil)
 	require.NoError(t, err)
 
-	_, err = s.RecordResponse(poll.ID, true)
+	_, err = s.RecordResponse(poll.ID, 1)
 	require.NoError(t, err)
-	updated, err := s.RecordResponse(poll.ID, false)
+	updated, err := s.RecordResponse(poll.ID, 0)
 	require.NoError(t, err)
 	assert.Equal(t, 2, updated.Responses)
-	assert.Equal(t, 1, updated.YesCount)
+	assert.Equal(t, 1, updated.Counts[1])
+	assert.Equal(t, 1, updated.Counts[0])
+}
+
+func TestStore_RecordResponseRejectsOutOfRange(t *testing.T) {
+	s := NewStore()
+	poll, err := s.Create("q", 1.0, nil)
+	require.NoError(t, err)
+	_, err = s.RecordResponse(poll.ID, 2)
+	assert.Error(t, err)
+	_, err = s.RecordResponse(poll.ID, -1)
+	assert.Error(t, err)
 }
 
 func TestStore_RecordResponseUnknownPoll(t *testing.T) {
 	s := NewStore()
-	_, err := s.RecordResponse("nope", true)
+	_, err := s.RecordResponse("nope", 1)
 	assert.ErrorIs(t, err, ErrPollNotFound)
 }
 
@@ -58,18 +83,25 @@ func TestStore_SeedIsIdempotent(t *testing.T) {
 	assert.Len(t, s.List(), first)
 }
 
-func TestStore_SeedPopulatesEstimatePoll(t *testing.T) {
+func TestStore_SeedPopulatesEstimatePolls(t *testing.T) {
 	s := NewStore()
 	require.NoError(t, s.Seed())
-	poll, ok := s.Get("trust-marketplace")
+
+	binary, ok := s.Get("trust-marketplace")
 	require.True(t, ok)
-	assert.Equal(t, 100, poll.Responses)
-	assert.Equal(t, 55, poll.YesCount)
+	assert.Equal(t, 100, binary.Responses)
+	assert.Equal(t, 55, binary.Counts[1])
+
+	choice, ok := s.Get("optimize-for")
+	require.True(t, ok)
+	assert.False(t, choice.Binary())
+	assert.Equal(t, 100, choice.Responses)
+	assert.Equal(t, []int{50, 30, 20}, choice.Counts)
 }
 
 func TestStore_ConcurrentResponsesAreCounted(t *testing.T) {
 	s := NewStore()
-	poll, err := s.Create("q", 1.0)
+	poll, err := s.Create("q", 1.0, nil)
 	require.NoError(t, err)
 
 	const n = 200
@@ -78,7 +110,7 @@ func TestStore_ConcurrentResponsesAreCounted(t *testing.T) {
 	for range n {
 		go func() {
 			defer wg.Done()
-			_, _ = s.RecordResponse(poll.ID, true)
+			_, _ = s.RecordResponse(poll.ID, 1)
 		}()
 	}
 	wg.Wait()
@@ -86,5 +118,5 @@ func TestStore_ConcurrentResponsesAreCounted(t *testing.T) {
 	got, ok := s.Get(poll.ID)
 	require.True(t, ok)
 	assert.Equal(t, n, got.Responses)
-	assert.Equal(t, n, got.YesCount)
+	assert.Equal(t, n, got.Counts[1])
 }
