@@ -107,20 +107,21 @@ const homeHTML = `<!doctype html>
     color: #212529;
     margin: 0;
   }
-  .wrap { max-width: 760px; margin: 0 auto; padding: 44px 18px 96px; }
-  .brand { display: flex; align-items: center; gap: 28px; margin-bottom: 20px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 52px 18px 112px; }
+  .brand { display: flex; align-items: center; gap: 28px; margin-bottom: 28px; }
   h1 { font-size: 34px; margin: 0; }
-  .balloon-wrap { margin-bottom: 34px; }
-  .nes-balloon p { font-size: 11px; line-height: 1.9; margin: 0; }
-  .poll { background: #ffffff; margin: 26px 0; }
-  .q { font-size: 13px; line-height: 1.9; margin: 6px 0 16px; }
-  .meta { font-size: 10px; line-height: 1.8; margin: 0 0 20px; }
-  .dot { color: #adb5bd; }
-  .bar-row { display: flex; justify-content: space-between; font-size: 10px; margin: 16px 0 8px; }
-  .nes-progress { width: 100%; height: 26px; }
-  .ci { font-size: 9px; color: #6b7280; line-height: 1.9; margin: 12px 0 0; }
-  .empty { font-size: 10px; line-height: 1.9; }
-  footer { display: flex; align-items: center; gap: 24px; margin-top: 48px; flex-wrap: wrap; }
+  .balloon-wrap { margin-bottom: 56px; }
+  .nes-balloon p { font-size: 11px; line-height: 2; margin: 0; }
+  .polls { display: flex; flex-direction: column; gap: 44px; margin-bottom: 64px; }
+  .poll { background: #ffffff; margin: 0; padding: 32px 28px; }
+  .q { font-size: 13px; line-height: 2; margin: 0 0 20px; }
+  .meta { font-size: 10px; line-height: 1.8; margin: 0 0 10px; }
+  .dot { color: #adb5bd; margin: 0 6px; }
+  .bar-row { display: flex; justify-content: space-between; font-size: 10px; margin: 28px 0 10px; }
+  .nes-progress { width: 100%; height: 28px; margin: 0; }
+  .ci { font-size: 9px; color: #6b7280; line-height: 1.9; margin: 18px 0 0; }
+  .empty { font-size: 10px; line-height: 1.9; margin: 10px 0 0; }
+  footer { display: flex; align-items: center; gap: 24px; margin-top: 64px; flex-wrap: wrap; }
   footer .note { font-size: 9px; color: #6b7280; line-height: 1.9; }
 </style>
 </head>
@@ -138,6 +139,7 @@ const homeHTML = `<!doctype html>
     </div>
   </header>
 
+  <main class="polls">
   {{range .Polls}}
   <section class="nes-container is-rounded poll">
     <p class="q">{{.Question}}</p>
@@ -160,6 +162,7 @@ const homeHTML = `<!doctype html>
     {{end}}
   </section>
   {{end}}
+  </main>
 
   <footer>
     <a href="https://github.com/jadidbourbaki/donn" class="nes-btn is-primary">Source</a>
