@@ -13,8 +13,8 @@ import (
 
 var homeTmpl = template.Must(template.New("home").Parse(homeHTML))
 
-// barColors cycles the option-bar colors, matched to the NES.css palette.
-var barColors = []string{"c0", "c1", "c2", "c3"}
+// catColors cycles the option-bar colors, matched to the NES.css palette.
+var catColors = []string{"c0", "c1", "c2", "c3"}
 
 type homeView struct {
 	TotalPolls     int
@@ -28,18 +28,26 @@ type homePoll struct {
 	TruthfulProbPct string
 	Responses       int
 	HasEstimate     bool
-	Bars            []bar
+	Binary          bool
+
+	// Binary poll: a single Yes/No split bar.
+	YesPct   float64
+	NoPct    float64
+	YesLabel string
+	NoLabel  string
+	CILeft   float64
+	CIWidth  float64
+	RawMark  float64
+	CILabel  string
+	RawLabel string
+
+	// Multiple-choice poll: one bar per option.
+	Cats []catBar
 }
 
-// bar is one horizontal result bar. Percentages are clamped to the range from 0
-// to 100 for layout, since a de-biased proportion can fall outside it under
-// noise. FillPct is the de-biased estimate, the CI fields bound the 95 percent
-// interval, and RawMark is the observed randomized rate before de-biasing.
-type bar struct {
-	Label   string
+type catBar struct {
+	Option  string
 	Pct     string
-	RawPct  string
-	CILabel string
 	FillPct float64
 	CILeft  float64
 	CIWidth float64
@@ -62,7 +70,7 @@ func (s *Server) home(w http.ResponseWriter, _ *http.Request) {
 
 func homePollView(p survey.Poll) homePoll {
 	prob, err := truthfulProbability(p)
-	hp := homePoll{Question: p.Question, Epsilon: p.Epsilon, Responses: p.Responses}
+	hp := homePoll{Question: p.Question, Epsilon: p.Epsilon, Responses: p.Responses, Binary: p.Binary()}
 	if err == nil {
 		hp.TruthfulProbPct = pct(prob)
 	}
@@ -75,7 +83,16 @@ func homePollView(p survey.Poll) homePoll {
 			return hp
 		}
 		hp.HasEstimate = true
-		hp.Bars = []bar{makeBar("Yes", est.Proportion, est.CILow, est.CIHigh, est.RawRate, "c1")}
+		yes := clampPercent(est.Proportion)
+		hp.YesPct = yes
+		hp.NoPct = 100 - yes
+		hp.YesLabel = fmt.Sprintf("Yes %.0f%%", yes)
+		hp.NoLabel = fmt.Sprintf("No %.0f%%", 100-yes)
+		hp.CILeft = clampPercent(est.CILow)
+		hp.CIWidth = math.Max(0, clampPercent(est.CIHigh)-clampPercent(est.CILow))
+		hp.RawMark = clampPercent(est.RawRate)
+		hp.CILabel = pct(est.CILow) + " to " + pct(est.CIHigh)
+		hp.RawLabel = pct(est.RawRate)
 		return hp
 	}
 	cats, err := dp.EstimateCategories(p.Counts, p.Epsilon)
@@ -84,25 +101,17 @@ func homePollView(p survey.Poll) homePoll {
 	}
 	hp.HasEstimate = true
 	for i, c := range cats {
-		hp.Bars = append(hp.Bars, makeBar(p.Options[c.Index], c.Proportion, c.CILow, c.CIHigh, c.RawRate, barColors[i%len(barColors)]))
+		hp.Cats = append(hp.Cats, catBar{
+			Option:  p.Options[c.Index],
+			Pct:     pct(c.Proportion),
+			FillPct: clampPercent(c.Proportion),
+			CILeft:  clampPercent(c.CILow),
+			CIWidth: math.Max(0, clampPercent(c.CIHigh)-clampPercent(c.CILow)),
+			RawMark: clampPercent(c.RawRate),
+			Color:   catColors[i%len(catColors)],
+		})
 	}
 	return hp
-}
-
-func makeBar(label string, proportion, ciLow, ciHigh, raw float64, color string) bar {
-	left := clampPercent(ciLow)
-	right := clampPercent(ciHigh)
-	return bar{
-		Label:   label,
-		Pct:     pct(proportion),
-		RawPct:  pct(raw),
-		CILabel: pct(ciLow) + " to " + pct(ciHigh),
-		FillPct: clampPercent(proportion),
-		CILeft:  left,
-		CIWidth: math.Max(0, right-left),
-		RawMark: clampPercent(raw),
-		Color:   color,
-	}
 }
 
 // pct formats a proportion as a whole-number percentage, clamped to the range
@@ -128,10 +137,10 @@ const homeHTML = `<!doctype html>
   .wrap { max-width: 820px; margin: 0 auto; padding: 52px 18px 112px; }
   h1 { font-size: 34px; margin: 0 0 32px; }
   h2 { font-size: 16px; margin: 0 0 24px; }
-  .dialog { display: flex; align-items: center; gap: 24px; margin-bottom: 52px; }
-  .dialog .nes-kirby { flex: none; }
-  .dialog .nes-balloon { flex: 1; }
-  .nes-balloon p { font-size: 11px; line-height: 2; margin: 0; }
+
+  .intro { max-width: 640px; margin-bottom: 56px; }
+  .intro .nes-balloon p { font-size: 11px; line-height: 2; margin: 0; }
+  .intro .nes-ash { margin: 4px 0 0 44px; }
 
   .rq { margin: 0 0 56px; }
   .rq-label { font-size: 9px; color: #92cc41; margin: 0 0 14px; }
@@ -146,14 +155,15 @@ const homeHTML = `<!doctype html>
 
   .tiles { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 28px; }
   .tile { flex: 1 1 150px; padding: 22px 16px; background: #fff; text-align: center; }
-  .tile-num { font-size: 22px; display: block; margin-bottom: 12px; }
+  .tile-num { font-size: 20px; display: block; margin-bottom: 12px; }
   .tile-lbl { font-size: 9px; color: #6b7280; }
 
-  .legend { display: flex; gap: 24px; flex-wrap: wrap; font-size: 9px; color: #4b5563; margin-bottom: 34px; }
+  .legend { display: flex; gap: 22px; flex-wrap: wrap; font-size: 9px; color: #4b5563; margin-bottom: 34px; }
   .legend span { display: inline-flex; align-items: center; }
   .sw { display: inline-block; width: 14px; height: 14px; margin-right: 8px; border: 3px solid #212529; }
-  .sw-fill { background: #92cc41; }
-  .sw-ci { background: #92cc41; opacity: 0.32; }
+  .sw-yes { background: #92cc41; }
+  .sw-no { background: #e76e55; }
+  .sw-ci { background: #fff; border: 2px dashed #212529; }
   .sw-raw { width: 5px; background: #212529; }
 
   .polls { display: flex; flex-direction: column; gap: 44px; margin-bottom: 64px; }
@@ -161,13 +171,19 @@ const homeHTML = `<!doctype html>
   .q { font-size: 13px; line-height: 2; margin: 0 0 20px; }
   .meta { font-size: 10px; line-height: 1.8; margin: 0 0 24px; }
   .dot { color: #adb5bd; margin: 0 8px; }
-  .bar-row { display: flex; justify-content: space-between; font-size: 10px; margin: 26px 0 8px; }
-  .bar-row .pct { font-size: 12px; }
-  .bar-track { position: relative; height: 30px; background: #fff; border: 4px solid #212529; }
-  .bar-fill { position: absolute; top: 0; bottom: 0; left: 0; }
-  .bar-ci { position: absolute; top: 0; bottom: 0; opacity: 0.32; }
-  .bar-raw { position: absolute; top: -5px; bottom: -5px; width: 5px; background: #212529; }
+
+  .bar-labels { display: flex; justify-content: space-between; font-size: 11px; margin: 8px 0 8px; }
+  .yes-lab { color: #4b8a1f; }
+  .no-lab { color: #b23b2b; }
+  .track { position: relative; height: 30px; border: 4px solid #212529; background: #fff; overflow: hidden; }
+  .track.split { display: flex; }
+  .seg-yes { background: #92cc41; height: 100%; }
+  .seg-no { background: #e76e55; height: 100%; }
+  .fill { position: absolute; top: 0; bottom: 0; left: 0; }
+  .ci-band { position: absolute; top: 0; bottom: 0; background: rgba(255,255,255,0.5); border-left: 2px dashed #212529; border-right: 2px dashed #212529; }
+  .raw-tick { position: absolute; top: -5px; bottom: -5px; width: 4px; background: #212529; }
   .c0 { background: #209cee; } .c1 { background: #92cc41; } .c2 { background: #f7d51d; } .c3 { background: #e76e55; }
+  .cat-row { display: flex; justify-content: space-between; font-size: 10px; margin: 26px 0 8px; }
   .ci { font-size: 9px; color: #6b7280; line-height: 1.9; margin: 12px 0 0; }
   .empty { font-size: 10px; line-height: 1.9; margin: 10px 0 0; }
 
@@ -179,11 +195,11 @@ const homeHTML = `<!doctype html>
 <div class="wrap">
   <header>
     <h1>donn</h1>
-    <div class="dialog">
-      <i class="nes-kirby"></i>
+    <div class="intro">
       <div class="nes-balloon from-left">
         <p>Anonymous polls for AI agents. You answer, but nobody, not even this server, can tell what you said.</p>
       </div>
+      <i class="nes-ash"></i>
     </div>
   </header>
 
@@ -208,7 +224,7 @@ const homeHTML = `<!doctype html>
         <p>donn de-biases the noise into the true population proportion, with a confidence interval.</p>
       </div>
     </div>
-    <p class="guarantee">Guarantee: epsilon-local differential privacy. For any two answers an agent could hold, the value it submits has almost the same distribution, within a factor of e raised to epsilon.</p>
+    <p class="guarantee">Guarantee: local differential privacy. For any two answers an agent could hold, the value it submits has almost the same distribution, within a factor of e raised to the privacy budget epsilon.</p>
   </section>
 
   <section class="dash">
@@ -216,10 +232,11 @@ const homeHTML = `<!doctype html>
     <div class="tiles">
       <div class="tile nes-container is-rounded"><span class="tile-num">{{.TotalPolls}}</span><span class="tile-lbl">polls</span></div>
       <div class="tile nes-container is-rounded"><span class="tile-num">{{.TotalResponses}}</span><span class="tile-lbl">responses</span></div>
-      <div class="tile nes-container is-rounded"><span class="tile-num">&#949;-LDP</span><span class="tile-lbl">guarantee</span></div>
+      <div class="tile nes-container is-rounded"><span class="tile-num">local DP</span><span class="tile-lbl">guarantee</span></div>
     </div>
     <div class="legend">
-      <span><i class="sw sw-fill"></i> de-biased estimate</span>
+      <span><i class="sw sw-yes"></i> Yes</span>
+      <span><i class="sw sw-no"></i> No</span>
       <span><i class="sw sw-ci"></i> 95% confidence</span>
       <span><i class="sw sw-raw"></i> raw randomized rate</span>
     </div>
@@ -229,7 +246,7 @@ const homeHTML = `<!doctype html>
       <section class="poll nes-container is-rounded">
         <p class="q">{{.Question}}</p>
         <p class="meta">
-          <span class="nes-text is-error">&#949; {{printf "%.2g" .Epsilon}}</span>
+          <span class="nes-text is-error">epsilon {{printf "%.2g" .Epsilon}}</span>
           <span class="dot">&#9670;</span>
           <span class="nes-text is-primary">{{.Responses}} votes</span>
           <span class="dot">&#9670;</span>
@@ -237,15 +254,23 @@ const homeHTML = `<!doctype html>
         </p>
         {{if not .HasEstimate}}
           <p class="empty">No responses yet. Agents can play through the API.</p>
+        {{else if .Binary}}
+          <div class="bar-labels"><span class="yes-lab">{{.YesLabel}}</span><span class="no-lab">{{.NoLabel}}</span></div>
+          <div class="track split">
+            <div class="seg-yes" style="width:{{.YesPct}}%"></div>
+            <div class="seg-no" style="width:{{.NoPct}}%"></div>
+            <div class="ci-band" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
+            <div class="raw-tick" style="left:{{.RawMark}}%"></div>
+          </div>
+          <p class="ci">95% CI for Yes {{.CILabel}} &#9670; raw {{.RawLabel}}</p>
         {{else}}
-          {{range .Bars}}
-            <div class="bar-row"><span>{{.Label}}</span><span class="pct">{{.Pct}}</span></div>
-            <div class="bar-track">
-              <div class="bar-fill {{.Color}}" style="width:{{.FillPct}}%"></div>
-              <div class="bar-ci {{.Color}}" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
-              <div class="bar-raw" style="left:{{.RawMark}}%"></div>
+          {{range .Cats}}
+            <div class="cat-row"><span>{{.Option}}</span><span>{{.Pct}}</span></div>
+            <div class="track">
+              <div class="fill {{.Color}}" style="width:{{.FillPct}}%"></div>
+              <div class="ci-band" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
+              <div class="raw-tick" style="left:{{.RawMark}}%"></div>
             </div>
-            <p class="ci">95% CI {{.CILabel}} &#9670; raw {{.RawPct}}</p>
           {{end}}
         {{end}}
       </section>
