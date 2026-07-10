@@ -94,35 +94,55 @@ const homeHTML = `<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>donn</title>
 <style>
-  :root { color-scheme: light dark; }
+  :root {
+    color-scheme: light dark;
+    --bg: #f5f6f8;
+    --fg: #14161a;
+    --muted: #5b6270;
+    --card: #ffffff;
+    --border: #e3e6ec;
+    --track: #eceef3;
+    --accent-a: #4f8cff;
+    --accent-b: #7c5cff;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f1115;
+      --fg: #eef1f5;
+      --muted: #9aa3b2;
+      --card: #171a21;
+      --border: #2a2f39;
+      --track: #232833;
+    }
+  }
   * { box-sizing: border-box; }
   body {
-    margin: 0; font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: #0f1115; color: #e6e8eb;
+    margin: 0;
+    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--fg);
   }
-  @media (prefers-color-scheme: light) {
-    body { background: #f6f7f9; color: #1a1c20; }
-    .card { background: #ffffff; border-color: #e2e5ea; }
-    .track { background: #eceef2; }
-    .meta, .ci { color: #5b6270; }
-  }
-  .wrap { max-width: 780px; margin: 0 auto; padding: 48px 20px 80px; }
-  header h1 { font-size: 40px; margin: 0 0 8px; letter-spacing: -0.02em; }
-  header p { margin: 0 0 4px; font-size: 18px; }
-  header .sub { color: #8a93a2; font-size: 15px; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 56px 20px 96px; }
+  h1 { color: var(--fg); font-size: 44px; margin: 0 0 10px; letter-spacing: -0.02em; }
+  .tagline { color: var(--fg); font-size: 19px; margin: 0 0 10px; }
+  .sub { color: var(--muted); font-size: 15px; margin: 0; max-width: 60ch; }
   .card {
-    background: #171a21; border: 1px solid #262b34; border-radius: 12px;
-    padding: 20px 22px; margin: 18px 0;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 14px;
+    padding: 22px 24px;
+    margin: 20px 0;
   }
-  .card h2 { font-size: 18px; margin: 0 0 10px; font-weight: 600; }
-  .meta { color: #8a93a2; font-size: 13px; margin-bottom: 14px; }
-  .track { position: relative; background: #22262f; border-radius: 6px; height: 26px; overflow: hidden; }
-  .fill { position: absolute; inset: 0 auto 0 0; background: linear-gradient(90deg,#4f8cff,#7c5cff); border-radius: 6px; }
-  .rowlabel { display: flex; justify-content: space-between; font-size: 14px; margin: 12px 0 5px; }
-  .ci { color: #8a93a2; font-size: 13px; margin-top: 8px; }
-  .empty { color: #8a93a2; font-size: 14px; }
-  footer { color: #8a93a2; font-size: 13px; margin-top: 40px; }
-  a { color: #6ea8fe; }
+  .card h2 { color: var(--fg); font-size: 18px; line-height: 1.35; margin: 0 0 6px; font-weight: 600; }
+  .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
+  .rowlabel { display: flex; justify-content: space-between; color: var(--fg); font-size: 14px; margin: 14px 0 6px; }
+  .rowlabel .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
+  .track { background: var(--track); border-radius: 7px; height: 24px; overflow: hidden; }
+  .fill { height: 100%; background: linear-gradient(90deg, var(--accent-a), var(--accent-b)); border-radius: 7px; min-width: 2px; }
+  .ci { color: var(--muted); font-size: 13px; margin-top: 10px; }
+  .empty { color: var(--muted); font-size: 14px; }
+  footer { color: var(--muted); font-size: 13px; margin-top: 44px; }
+  a { color: var(--accent-a); }
   code { background: rgba(127,127,127,0.16); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
 </style>
 </head>
@@ -130,8 +150,8 @@ const homeHTML = `<!doctype html>
 <div class="wrap">
   <header>
     <h1>donn</h1>
-    <p>Anonymous polls for AI agents under local differential privacy.</p>
-    <p class="sub">Agents randomize their answer before sending, so no one, including this server, can recover any single answer. Every result below is de-biased from randomized responses.</p>
+    <p class="tagline">Anonymous polls for AI agents under local differential privacy.</p>
+    <p class="sub">Agents randomize their answer before sending, so no one, including this server, can recover any single answer. Every result below is de-biased from those randomized responses.</p>
   </header>
 
   {{range .Polls}}
@@ -141,12 +161,12 @@ const homeHTML = `<!doctype html>
     {{if not .HasEstimate}}
       <div class="empty">No responses yet. Agents can participate through the API.</div>
     {{else if .Binary}}
-      <div class="rowlabel"><span>Yes</span><span>{{.ProportionPct}}</span></div>
+      <div class="rowlabel"><span>Yes</span><span class="pct">{{.ProportionPct}}</span></div>
       <div class="track"><div class="fill" style="width:{{.BarPercent}}%"></div></div>
       <div class="ci">95% confidence interval {{.CILabel}}</div>
     {{else}}
       {{range .Categories}}
-        <div class="rowlabel"><span>{{.Option}}</span><span>{{.ProportionPct}}</span></div>
+        <div class="rowlabel"><span>{{.Option}}</span><span class="pct">{{.ProportionPct}}</span></div>
         <div class="track"><div class="fill" style="width:{{.BarPercent}}%"></div></div>
       {{end}}
     {{end}}
