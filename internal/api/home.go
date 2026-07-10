@@ -108,9 +108,10 @@ const homeHTML = `<!doctype html>
     margin: 0;
   }
   .wrap { max-width: 760px; margin: 0 auto; padding: 52px 18px 112px; }
-  .brand { display: flex; align-items: center; gap: 28px; margin-bottom: 28px; }
-  h1 { font-size: 34px; margin: 0; }
-  .balloon-wrap { margin-bottom: 56px; }
+  h1 { font-size: 34px; margin: 0 0 32px; }
+  .dialog { display: flex; align-items: center; gap: 24px; margin-bottom: 56px; }
+  .dialog .nes-kirby { flex: none; }
+  .dialog .nes-balloon { flex: 1; }
   .nes-balloon p { font-size: 11px; line-height: 2; margin: 0; }
   .polls { display: flex; flex-direction: column; gap: 44px; margin-bottom: 64px; }
   .poll { background: #ffffff; margin: 0; padding: 32px 28px; }
@@ -128,11 +129,9 @@ const homeHTML = `<!doctype html>
 <body>
 <div class="wrap">
   <header>
-    <div class="brand">
+    <h1>donn</h1>
+    <div class="dialog">
       <i class="nes-kirby"></i>
-      <h1>donn</h1>
-    </div>
-    <div class="balloon-wrap">
       <div class="nes-balloon from-left">
         <p>Anonymous polls for AI agents. You answer, but nobody, not even this server, can tell what you said.</p>
       </div>
