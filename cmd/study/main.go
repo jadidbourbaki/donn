@@ -36,6 +36,7 @@ func main() {
 	workers := flag.Int("concurrency", 24, "concurrent model calls")
 	region := flag.String("region", "us-east-1", "AWS region for Bedrock")
 	generate := flag.Int("generate", 0, "generate this many extra questions with a model")
+	curated := flag.Bool("curated", true, "include the built-in questions")
 	flag.Parse()
 
 	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
@@ -59,7 +60,10 @@ func main() {
 	}
 
 	ctx := context.Background()
-	questions := curatedQuestions
+	var questions []string
+	if *curated {
+		questions = append(questions, curatedQuestions...)
+	}
 	if *generate > 0 {
 		gen, err := experiment.GenerateQuestions(ctx, anthropic, *generate)
 		if err != nil {
