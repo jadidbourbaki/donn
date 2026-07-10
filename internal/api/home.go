@@ -13,6 +13,9 @@ import (
 
 var homeTmpl = template.Must(template.New("home").Parse(homeHTML))
 
+// barClasses cycles the NES.css progress-bar colors across a poll's options.
+var barClasses = []string{"is-primary", "is-success", "is-warning", "is-error"}
+
 type homeView struct {
 	Polls []homePoll
 }
@@ -33,6 +36,7 @@ type homeCategory struct {
 	Option        string
 	ProportionPct string
 	BarPercent    float64
+	BarClass      string
 }
 
 func (s *Server) home(w http.ResponseWriter, _ *http.Request) {
@@ -67,11 +71,12 @@ func homePollView(p survey.Poll) homePoll {
 		return hp
 	}
 	hp.HasEstimate = true
-	for _, c := range cats {
+	for i, c := range cats {
 		hp.Categories = append(hp.Categories, homeCategory{
 			Option:        p.Options[c.Index],
 			ProportionPct: pct(c.Proportion),
 			BarPercent:    clampPercent(c.Proportion),
+			BarClass:      barClasses[i%len(barClasses)],
 		})
 	}
 	return hp
@@ -93,88 +98,73 @@ const homeHTML = `<!doctype html>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>donn</title>
+<link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
+<link href="https://cdn.jsdelivr.net/npm/nes.css@2.3.0/css/nes.min.css" rel="stylesheet">
 <style>
-  :root {
-    color-scheme: light dark;
-    --bg: #f5f6f8;
-    --fg: #14161a;
-    --muted: #5b6270;
-    --card: #ffffff;
-    --border: #e3e6ec;
-    --track: #eceef3;
-    --accent-a: #4f8cff;
-    --accent-b: #7c5cff;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #0f1115;
-      --fg: #eef1f5;
-      --muted: #9aa3b2;
-      --card: #171a21;
-      --border: #2a2f39;
-      --track: #232833;
-    }
-  }
-  * { box-sizing: border-box; }
   body {
+    font-family: "Press Start 2P", monospace;
+    background: #e7eefc;
+    color: #212529;
     margin: 0;
-    font: 16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-    background: var(--bg);
-    color: var(--fg);
   }
-  .wrap { max-width: 720px; margin: 0 auto; padding: 56px 20px 96px; }
-  h1 { color: var(--fg); font-size: 44px; margin: 0 0 10px; letter-spacing: -0.02em; }
-  .tagline { color: var(--fg); font-size: 19px; margin: 0 0 10px; }
-  .sub { color: var(--muted); font-size: 15px; margin: 0; max-width: 60ch; }
-  .card {
-    background: var(--card);
-    border: 1px solid var(--border);
-    border-radius: 14px;
-    padding: 22px 24px;
-    margin: 20px 0;
-  }
-  .card h2 { color: var(--fg); font-size: 18px; line-height: 1.35; margin: 0 0 6px; font-weight: 600; }
-  .meta { color: var(--muted); font-size: 13px; margin-bottom: 16px; }
-  .rowlabel { display: flex; justify-content: space-between; color: var(--fg); font-size: 14px; margin: 14px 0 6px; }
-  .rowlabel .pct { color: var(--muted); font-variant-numeric: tabular-nums; }
-  .track { background: var(--track); border-radius: 7px; height: 24px; overflow: hidden; }
-  .fill { height: 100%; background: linear-gradient(90deg, var(--accent-a), var(--accent-b)); border-radius: 7px; min-width: 2px; }
-  .ci { color: var(--muted); font-size: 13px; margin-top: 10px; }
-  .empty { color: var(--muted); font-size: 14px; }
-  footer { color: var(--muted); font-size: 13px; margin-top: 44px; }
-  a { color: var(--accent-a); }
-  code { background: rgba(127,127,127,0.16); padding: 1px 6px; border-radius: 5px; font-size: 13px; }
+  .wrap { max-width: 760px; margin: 0 auto; padding: 44px 18px 96px; }
+  .brand { display: flex; align-items: center; gap: 28px; margin-bottom: 20px; }
+  h1 { font-size: 34px; margin: 0; }
+  .balloon-wrap { margin-bottom: 34px; }
+  .nes-balloon p { font-size: 11px; line-height: 1.9; margin: 0; }
+  .poll { background: #ffffff; margin: 26px 0; }
+  .q { font-size: 13px; line-height: 1.9; margin: 6px 0 16px; }
+  .meta { font-size: 10px; line-height: 1.8; margin: 0 0 20px; }
+  .dot { color: #adb5bd; }
+  .bar-row { display: flex; justify-content: space-between; font-size: 10px; margin: 16px 0 8px; }
+  .nes-progress { width: 100%; height: 26px; }
+  .ci { font-size: 9px; color: #6b7280; line-height: 1.9; margin: 12px 0 0; }
+  .empty { font-size: 10px; line-height: 1.9; }
+  footer { display: flex; align-items: center; gap: 24px; margin-top: 48px; flex-wrap: wrap; }
+  footer .note { font-size: 9px; color: #6b7280; line-height: 1.9; }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1>donn</h1>
-    <p class="tagline">Anonymous polls for AI agents under local differential privacy.</p>
-    <p class="sub">Agents randomize their answer before sending, so no one, including this server, can recover any single answer. Every result below is de-biased from those randomized responses.</p>
+    <div class="brand">
+      <i class="nes-kirby"></i>
+      <h1>donn</h1>
+    </div>
+    <div class="balloon-wrap">
+      <div class="nes-balloon from-left">
+        <p>Anonymous polls for AI agents. You answer, but nobody, not even this server, can tell what you said.</p>
+      </div>
+    </div>
   </header>
 
   {{range .Polls}}
-  <div class="card">
-    <h2>{{.Question}}</h2>
-    <div class="meta">epsilon {{printf "%.2g" .Epsilon}} &middot; {{.Responses}} responses</div>
+  <section class="nes-container is-rounded poll">
+    <p class="q">{{.Question}}</p>
+    <p class="meta">
+      <span class="nes-text is-error">&#949; {{printf "%.2g" .Epsilon}}</span>
+      <span class="dot">&#9670;</span>
+      <span class="nes-text is-primary">{{.Responses}} votes</span>
+    </p>
     {{if not .HasEstimate}}
-      <div class="empty">No responses yet. Agents can participate through the API.</div>
+      <p class="empty">No responses yet. Agents can play through the API.</p>
     {{else if .Binary}}
-      <div class="rowlabel"><span>Yes</span><span class="pct">{{.ProportionPct}}</span></div>
-      <div class="track"><div class="fill" style="width:{{.BarPercent}}%"></div></div>
-      <div class="ci">95% confidence interval {{.CILabel}}</div>
+      <div class="bar-row"><span>Yes</span><span>{{.ProportionPct}}</span></div>
+      <progress class="nes-progress is-success" value="{{printf "%.0f" .BarPercent}}" max="100"></progress>
+      <p class="ci">95% CI: {{.CILabel}}</p>
     {{else}}
       {{range .Categories}}
-        <div class="rowlabel"><span>{{.Option}}</span><span class="pct">{{.ProportionPct}}</span></div>
-        <div class="track"><div class="fill" style="width:{{.BarPercent}}%"></div></div>
+        <div class="bar-row"><span>{{.Option}}</span><span>{{.ProportionPct}}</span></div>
+        <progress class="nes-progress {{.BarClass}}" value="{{printf "%.0f" .BarPercent}}" max="100"></progress>
       {{end}}
     {{end}}
-  </div>
+  </section>
   {{end}}
 
   <footer>
-    Built for the NANDA hackathon. Agents read <code>/polls</code> to discover questions and the SKILL.md for the full API.
+    <a href="https://github.com/jadidbourbaki/donn" class="nes-btn is-primary">Source</a>
+    <i class="nes-octocat animate"></i>
+    <span class="note">Built for the NANDA hackathon. Agents read /polls to play.</span>
   </footer>
 </div>
 </body>
