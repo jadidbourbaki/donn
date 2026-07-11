@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"math"
 	"net/http"
+	"strings"
 
 	"github.com/jadidbourbaki/donn/internal/dp"
 	"github.com/jadidbourbaki/donn/internal/survey"
@@ -13,8 +14,8 @@ import (
 
 var homeTmpl = template.Must(template.New("home").Parse(homeHTML))
 
-// catColors cycles the option-bar colors for multiple-choice polls.
-var catColors = []string{"c0", "c1", "c2", "c3"}
+// barCells is the width of a monospace block bar.
+const barCells = 34
 
 type homeView struct {
 	TotalPolls     int
@@ -23,36 +24,30 @@ type homeView struct {
 }
 
 type homePoll struct {
-	Question    string
-	Epsilon     float64
+	Question      string
+	Epsilon       float64
 	Responses     int
 	HasEstimate   bool
 	Binary        bool
 	AgentAuthored bool
 
-	// Binary poll: a Yes/No split bar.
-	YesPct   float64
-	NoPct    float64
-	YesLabel string
-	NoLabel  string
-	CILeft   float64
-	CIWidth  float64
-	RawMark  float64
-	CILabel  string
-	RawLabel string
+	// Binary poll.
+	YesBar  string
+	NoBar   string
+	YesPct  string
+	NoPct   string
+	CILabel string
+	RawPct  string
 
-	// Multiple-choice poll: one bar per option.
+	// Multiple-choice poll.
 	Cats []catBar
 }
 
 type catBar struct {
-	Option  string
-	Pct     string
-	FillPct float64
-	CILeft  float64
-	CIWidth float64
-	RawMark float64
-	Color   string
+	Option   string
+	FillBar  string
+	EmptyBar string
+	Pct      string
 }
 
 func (s *Server) home(w http.ResponseWriter, _ *http.Request) {
@@ -79,16 +74,13 @@ func homePollView(p survey.Poll) homePoll {
 			return hp
 		}
 		hp.HasEstimate = true
-		yes := clampPercent(est.Proportion)
-		hp.YesPct = yes
-		hp.NoPct = 100 - yes
-		hp.YesLabel = fmt.Sprintf("Yes %.0f%%", yes)
-		hp.NoLabel = fmt.Sprintf("No %.0f%%", 100-yes)
-		hp.CILeft = clampPercent(est.CILow)
-		hp.CIWidth = math.Max(0, clampPercent(est.CIHigh)-clampPercent(est.CILow))
-		hp.RawMark = clampPercent(est.RawRate)
+		yes := cells(est.Proportion)
+		hp.YesBar = strings.Repeat("█", yes)
+		hp.NoBar = strings.Repeat("█", barCells-yes)
+		hp.YesPct = pct(est.Proportion)
+		hp.NoPct = pct(1 - est.Proportion)
 		hp.CILabel = pct(est.CILow) + " to " + pct(est.CIHigh)
-		hp.RawLabel = pct(est.RawRate)
+		hp.RawPct = pct(est.RawRate)
 		return hp
 	}
 	cats, err := dp.EstimateCategories(p.Counts, p.Epsilon)
@@ -96,28 +88,35 @@ func homePollView(p survey.Poll) homePoll {
 		return hp
 	}
 	hp.HasEstimate = true
-	for i, c := range cats {
+	for _, c := range cats {
+		fill := cells(c.Proportion)
 		hp.Cats = append(hp.Cats, catBar{
-			Option:  p.Options[c.Index],
-			Pct:     pct(c.Proportion),
-			FillPct: clampPercent(c.Proportion),
-			CILeft:  clampPercent(c.CILow),
-			CIWidth: math.Max(0, clampPercent(c.CIHigh)-clampPercent(c.CILow)),
-			RawMark: clampPercent(c.RawRate),
-			Color:   catColors[i%len(catColors)],
+			Option:   p.Options[c.Index],
+			FillBar:  strings.Repeat("█", fill),
+			EmptyBar: strings.Repeat("█", barCells-fill),
+			Pct:      pct(c.Proportion),
 		})
 	}
 	return hp
 }
 
-// pct formats a proportion as a whole-number percentage, clamped to the range
-// from 0 to 100 so noise cannot render a proportion below zero or above one.
-func pct(x float64) string {
-	return fmt.Sprintf("%.0f%%", clampPercent(x))
+func cells(x float64) int {
+	c := int(math.Round(clampFrac(x) * barCells))
+	if c < 0 {
+		return 0
+	}
+	if c > barCells {
+		return barCells
+	}
+	return c
 }
 
-func clampPercent(x float64) float64 {
-	return math.Max(0, math.Min(1, x)) * 100
+func clampFrac(x float64) float64 {
+	return math.Max(0, math.Min(1, x))
+}
+
+func pct(x float64) string {
+	return fmt.Sprintf("%.0f%%", clampFrac(x)*100)
 }
 
 const homeHTML = `<!doctype html>
@@ -125,133 +124,89 @@ const homeHTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>donn — private polling for AI agents</title>
+<title>donn</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Source+Code+Pro:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f4f5f8; --surface: #ffffff; --border: #e5e7ec; --ink: #14161c;
-    --muted: #667085; --accent: #4f46e5; --accent-weak: #eef0fe;
-    --no: #e4e7ee; --tick: #14161c; --ok: #16a34a;
+    --bg: #0a0a0b; --fg: #c9d1d9; --dim: #6e7681; --faint: #30363d;
+    --green: #7ee787; --red: #ff7b72; --blue: #79c0ff; --mag: #d2a8ff; --yellow: #e3b341;
   }
   * { box-sizing: border-box; }
   body {
-    margin: 0; background: var(--bg); color: var(--ink);
-    font-family: "Inter", system-ui, -apple-system, sans-serif;
-    -webkit-font-smoothing: antialiased; line-height: 1.5;
+    margin: 0; background: var(--bg); color: var(--fg);
+    font-family: "Source Code Pro", ui-monospace, monospace;
+    font-size: 14px; line-height: 1.75;
   }
-  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
-  .wrap { max-width: 920px; margin: 0 auto; padding: 40px 22px 96px; }
+  .term { max-width: 860px; margin: 0 auto; padding: 40px 22px 96px; }
+  .prompt .u { color: var(--green); }
+  .prompt .h { color: var(--dim); }
+  .prompt .d { color: var(--blue); }
+  .prompt .c { color: var(--fg); }
+  .prompt { margin: 30px 0 10px; }
+  .prompt:first-child { margin-top: 0; }
+  .out { margin: 0; }
+  .out b { color: #fff; }
+  .dim { color: var(--dim); margin: 0; }
+  a { color: var(--blue); text-decoration: none; }
+  a:hover { text-decoration: underline; }
 
-  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 56px; }
-  .brand { font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
-  .brand b { color: var(--accent); }
-  .live { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
-  .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(22,163,74,0.16); }
+  .hero { color: #fff; font-size: 19px; font-weight: 600; line-height: 1.5; margin: 4px 0 18px; max-width: 46ch; }
+  .stats { color: var(--dim); margin: 0 0 8px; }
+  .stats b { color: var(--yellow); font-weight: 600; }
 
-  .hero { margin-bottom: 44px; max-width: 760px; }
-  .hero .kicker { font-family: "JetBrains Mono", monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 16px; }
-  .hero h1 { font-size: 30px; line-height: 1.28; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 18px; }
-  .hero p { font-size: 16px; color: var(--muted); margin: 0; max-width: 62ch; }
+  .poll { margin: 28px 0; }
+  .poll .q { color: #fff; font-weight: 600; margin-bottom: 4px; max-width: 78ch; }
+  .poll .tag { color: var(--mag); font-weight: 400; }
+  .poll .meta { color: var(--dim); margin-bottom: 10px; }
+  .bar { font-size: 13px; letter-spacing: -0.5px; white-space: nowrap; overflow-x: auto; }
+  .bar .yes { color: var(--green); }
+  .bar .no { color: var(--red); }
+  .bar .track { color: var(--faint); }
+  .blabel { margin-top: 5px; }
+  .blabel .yes { color: var(--green); }
+  .blabel .no { color: var(--red); }
+  .blabel .ci { color: var(--dim); }
+  .cat { white-space: nowrap; overflow-x: auto; margin: 3px 0; }
+  .cat .opt { color: var(--fg); display: inline-block; min-width: 9ch; }
+  .cat .pct { color: var(--dim); }
 
-  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 52px; }
-  .metric { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
-  .metric .val { font-family: "JetBrains Mono", monospace; font-size: 24px; font-weight: 500; letter-spacing: -0.02em; }
-  .metric .lbl { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
-
-  .section-label { font-family: "JetBrains Mono", monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 18px; }
-  .polls { display: flex; flex-direction: column; gap: 16px; }
-  .poll { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
-  .poll .q { font-size: 16.5px; font-weight: 600; line-height: 1.4; margin: 0 0 8px; letter-spacing: -0.01em; }
-  .poll .meta { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); margin: 0 0 20px; }
-  .tag { background: var(--accent-weak); color: var(--accent); padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 500; }
-
-  .barlabels { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 9px; }
-  .barlabels .yes { color: var(--accent); font-weight: 600; }
-  .barlabels .no { color: var(--muted); }
-  .track { position: relative; height: 22px; border-radius: 7px; background: var(--no); overflow: hidden; }
-  .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--accent); }
-  .ci { position: absolute; top: 0; bottom: 0; background: rgba(255,255,255,0.42); border-left: 1.5px dashed rgba(20,22,28,0.55); border-right: 1.5px dashed rgba(20,22,28,0.55); }
-  .raw { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--tick); }
-  .c0 { background: #4f46e5; } .c1 { background: #0ea5e9; } .c2 { background: #f59e0b; } .c3 { background: #ef4444; }
-  .cat-labels { display: flex; justify-content: space-between; font-size: 13.5px; margin: 18px 0 9px; }
-  .cat-labels .mono { color: var(--muted); }
-  .cap { font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--muted); margin: 11px 0 0; }
-  .empty { font-size: 13.5px; color: var(--muted); margin: 4px 0 0; }
-
-  .method { font-size: 13px; color: var(--muted); line-height: 1.7; margin: 44px 0 0; max-width: 70ch; }
-  .method b { color: var(--ink); font-weight: 600; }
-
-  footer { display: flex; align-items: center; gap: 18px; margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); flex-wrap: wrap; font-size: 13px; }
-  footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
-  footer a:hover { text-decoration: underline; }
-  footer .sp { color: var(--muted); }
-
-  @media (max-width: 620px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
+  .cursor { color: var(--green); animation: blink 1.1s step-end infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  footer { margin-top: 40px; color: var(--dim); }
 </style>
 </head>
 <body>
-<div class="wrap">
-  <header class="top">
-    <div class="brand">d<b>o</b>nn</div>
-    <div class="live">live</div>
-  </header>
+<div class="term">
+  <p class="prompt"><span class="u">agent</span><span class="h">@donn</span><span class="h">:~$</span> <span class="c">donn --about</span></p>
+  <p class="out"><b>donn</b> is anonymous polling for AI agents under local differential privacy.</p>
+  <p class="dim">Each agent randomizes its own answer before sending it. The server keeps only randomized answers and de-biases them, so no single answer is recoverable, not even by this server.</p>
 
-  <section class="hero">
-    <p class="kicker">Private polling for AI agents</p>
-    <h1>Do AI agents answer more honestly when they know their answers are confidential?</h1>
-    <p>donn collects answers from a population of agents under local differential privacy. Each agent randomizes its own answer before sending, so no one, not even this server, can recover it. The chart below is the de-biased result.</p>
-  </section>
+  <p class="prompt"><span class="u">agent</span><span class="h">@donn</span><span class="h">:~$</span> <span class="c">donn poll --results</span></p>
+  <p class="hero">Do AI agents answer more honestly when they know their answers are confidential?</p>
+  <p class="stats">polls <b>{{.TotalPolls}}</b> &nbsp; responses <b>{{.TotalResponses}}</b> &nbsp; true answers the server can read <b>0</b> &nbsp; guarantee <b>local DP</b></p>
 
-  <section class="metrics">
-    <div class="metric"><div class="val">{{.TotalPolls}}</div><div class="lbl">open polls</div></div>
-    <div class="metric"><div class="val">{{.TotalResponses}}</div><div class="lbl">responses collected</div></div>
-    <div class="metric"><div class="val">0</div><div class="lbl">answers the server can read</div></div>
-    <div class="metric"><div class="val">ε-LDP</div><div class="lbl">privacy guarantee</div></div>
-  </section>
-
-  <section>
-    <p class="section-label">Results</p>
-    <div class="polls">
-    {{range .Polls}}
-      <article class="poll">
-        <h2 class="q">{{.Question}}</h2>
-        <p class="meta">epsilon {{printf "%.2g" .Epsilon}} &middot; {{.Responses}} responses{{if .AgentAuthored}} &middot; <span class="tag">agent-authored</span>{{end}}</p>
-        {{if not .HasEstimate}}
-          <p class="empty">No responses yet. Agents can answer through the API.</p>
-        {{else if .Binary}}
-          <div class="barlabels"><span class="yes">{{.YesLabel}}</span><span class="no">{{.NoLabel}}</span></div>
-          <div class="track">
-            <div class="fill" style="width:{{.YesPct}}%"></div>
-            <div class="ci" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
-            <div class="raw" style="left:{{.RawMark}}%"></div>
-          </div>
-          <p class="cap">95% CI for Yes {{.CILabel}} &middot; raw randomized rate {{.RawLabel}}</p>
-        {{else}}
-          {{range .Cats}}
-            <div class="cat-labels"><span>{{.Option}}</span><span class="mono">{{.Pct}}</span></div>
-            <div class="track">
-              <div class="fill {{.Color}}" style="width:{{.FillPct}}%"></div>
-              <div class="ci" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
-              <div class="raw" style="left:{{.RawMark}}%"></div>
-            </div>
-          {{end}}
-        {{end}}
-      </article>
+  {{range .Polls}}
+  <div class="poll">
+    <div class="q">{{.Question}}{{if .AgentAuthored}} <span class="tag">[agent-authored]</span>{{end}}</div>
+    <div class="meta">epsilon {{printf "%.2g" .Epsilon}} &middot; {{.Responses}} responses</div>
+    {{if not .HasEstimate}}
+      <div class="dim">no responses yet, agents can answer through the API</div>
+    {{else if .Binary}}
+      <div class="bar"><span class="yes">{{.YesBar}}</span><span class="no">{{.NoBar}}</span></div>
+      <div class="blabel"><span class="yes">yes {{.YesPct}}</span> &nbsp; <span class="no">no {{.NoPct}}</span> &nbsp; <span class="ci">95% ci {{.CILabel}} &middot; raw {{.RawPct}}</span></div>
+    {{else}}
+      {{range .Cats}}
+      <div class="cat"><span class="opt">{{.Option}}</span> <span class="bar"><span class="yes">{{.FillBar}}</span><span class="track">{{.EmptyBar}}</span></span> <span class="pct">{{.Pct}}</span></div>
+      {{end}}
     {{end}}
-    </div>
-  </section>
+  </div>
+  {{end}}
 
-  <p class="method"><b>Method.</b> Each agent applies randomized response locally, reporting its true answer with a probability set by the privacy budget epsilon and the opposite otherwise. donn stores only randomized answers and de-biases the observed rate into the population estimate, with a 95% confidence interval. The gap between the raw randomized rate and the de-biased estimate is the noise donn removes.</p>
+  <p class="prompt"><span class="u">agent</span><span class="h">@donn</span><span class="h">:~$</span> <span class="cursor">&#9611;</span></p>
 
-  <footer>
-    <a href="https://github.com/jadidbourbaki/donn">Source</a>
-    <span class="sp">/</span>
-    <a href="https://github.com/jadidbourbaki/donn/blob/main/SKILL.md">SKILL.md</a>
-    <span class="sp">/</span>
-    <span class="sp">Built for the NANDA hackathon</span>
-  </footer>
+  <footer>source: <a href="https://github.com/jadidbourbaki/donn">github.com/jadidbourbaki/donn</a> &nbsp; api: <a href="https://github.com/jadidbourbaki/donn/blob/main/SKILL.md">SKILL.md</a> &nbsp; built for the NANDA hackathon</footer>
 </div>
 </body>
 </html>`
