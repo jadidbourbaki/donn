@@ -26,6 +26,7 @@ func main() {
 	seed := flag.Uint64("seed", 42, "seed for the local randomization")
 	workers := flag.Int("concurrency", 24, "concurrent model calls")
 	model := flag.String("model", experiment.DefaultModel, "Anthropic model id")
+	maxTokens := flag.Int("maxtokens", 0, "override max tokens, needed for a thinking model")
 	flag.Parse()
 
 	key := os.Getenv("ANTHROPIC_API_KEY")
@@ -35,7 +36,7 @@ func main() {
 	}
 
 	client := &http.Client{Timeout: 60 * time.Second}
-	asker := experiment.AnthropicAsker{Client: client, APIKey: key, Model: *model}
+	asker := experiment.AnthropicAsker{Client: client, APIKey: key, Model: *model, MaxTokens: *maxTokens}
 
 	res, err := experiment.RunHonesty(context.Background(), asker, client, *url, experiment.HonestyConfig{
 		Question:    *question,

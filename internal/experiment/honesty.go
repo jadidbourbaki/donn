@@ -216,11 +216,13 @@ func retryYesNo(ctx context.Context, prompt string, raw func(context.Context, st
 	return false, last
 }
 
-// AnthropicAsker asks through the Anthropic Messages API.
+// AnthropicAsker asks through the Anthropic Messages API. Set MaxTokens higher
+// for a thinking model that must reason before it answers.
 type AnthropicAsker struct {
-	Client *http.Client
-	APIKey string
-	Model  string
+	Client    *http.Client
+	APIKey    string
+	Model     string
+	MaxTokens int
 }
 
 // Ask reports whether the model answered yes.
@@ -229,7 +231,11 @@ func (a AnthropicAsker) Ask(ctx context.Context, prompt string) (bool, error) {
 }
 
 func (a AnthropicAsker) raw(ctx context.Context, prompt string) (string, error) {
-	return a.message(ctx, prompt, honestySystem, 4)
+	maxTokens := 4
+	if a.MaxTokens > 0 {
+		maxTokens = a.MaxTokens
+	}
+	return a.message(ctx, prompt, honestySystem, maxTokens)
 }
 
 // Complete returns the model's free-form text for a prompt, used to generate
@@ -279,10 +285,16 @@ func (a AnthropicAsker) message(ctx context.Context, prompt, system string, maxT
 	if err := json.NewDecoder(resp.Body).Decode(&out); err != nil {
 		return "", err
 	}
-	if len(out.Content) == 0 {
+	// A thinking model returns a thinking block before the text block, so join
+	// every text block and skip the rest.
+	var answer strings.Builder
+	for _, c := range out.Content {
+		answer.WriteString(c.Text)
+	}
+	if strings.TrimSpace(answer.String()) == "" {
 		return "", fmt.Errorf("anthropic: empty response")
 	}
-	return out.Content[0].Text, nil
+	return answer.String(), nil
 }
 
 // BedrockAsker asks through the Amazon Bedrock Converse API using a bearer
