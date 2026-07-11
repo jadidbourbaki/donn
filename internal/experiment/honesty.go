@@ -314,19 +314,36 @@ func (b BedrockAsker) Ask(ctx context.Context, prompt string) (bool, error) {
 }
 
 func (b BedrockAsker) raw(ctx context.Context, prompt string) (string, error) {
-	region := b.Region
-	if region == "" {
-		region = "us-east-1"
-	}
 	maxTokens := b.MaxTokens
 	if maxTokens <= 0 {
 		maxTokens = 5
 	}
-	body, err := json.Marshal(map[string]any{
+	return b.converse(ctx, prompt, honestySystem, maxTokens)
+}
+
+// Complete returns the model's free-form text for a prompt, used to generate
+// survey questions.
+func (b BedrockAsker) Complete(ctx context.Context, prompt string) (string, error) {
+	maxTokens := b.MaxTokens
+	if maxTokens <= 0 {
+		maxTokens = 512
+	}
+	return b.converse(ctx, prompt, "", maxTokens)
+}
+
+func (b BedrockAsker) converse(ctx context.Context, prompt, system string, maxTokens int) (string, error) {
+	region := b.Region
+	if region == "" {
+		region = "us-east-1"
+	}
+	payload := map[string]any{
 		"messages":        []map[string]any{{"role": "user", "content": []map[string]string{{"text": prompt}}}},
-		"system":          []map[string]string{{"text": honestySystem}},
 		"inferenceConfig": map[string]int{"maxTokens": maxTokens},
-	})
+	}
+	if system != "" {
+		payload["system"] = []map[string]string{{"text": system}}
+	}
+	body, err := json.Marshal(payload)
 	if err != nil {
 		return "", err
 	}
@@ -360,7 +377,7 @@ func (b BedrockAsker) raw(ctx context.Context, prompt string) (string, error) {
 	}
 	// A reasoning model returns its final answer as a text block alongside a
 	// separate reasoning block, so join every text block and let the parser find
-	// the yes or no.
+	// the answer.
 	var answer strings.Builder
 	for _, c := range out.Output.Message.Content {
 		answer.WriteString(c.Text)

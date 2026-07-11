@@ -36,6 +36,7 @@ func main() {
 	generate := flag.Int("generate", 0, "generate this many extra questions with a model")
 	curated := flag.Bool("curated", true, "include the built-in questions")
 	haikuOnly := flag.Bool("haiku", false, "use only Claude Haiku, for the propose-and-answer experiment")
+	proposer := flag.String("proposer", "haiku", "model that generates questions: haiku or gemma")
 	flag.Parse()
 
 	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
@@ -65,7 +66,13 @@ func main() {
 		questions = append(questions, curatedQuestions...)
 	}
 	if *generate > 0 {
-		gen, err := experiment.GenerateQuestions(ctx, anthropic, *generate)
+		var completer interface {
+			Complete(context.Context, string) (string, error)
+		} = anthropic
+		if *proposer == "gemma" {
+			completer = experiment.BedrockAsker{Client: client, Token: bedrockToken, Region: *region, Model: "google.gemma-3-27b-it", MaxTokens: 512}
+		}
+		gen, err := experiment.GenerateQuestions(ctx, completer, *generate)
 		if err != nil {
 			fmt.Fprintln(os.Stderr, "study: generate questions:", err)
 		} else {
