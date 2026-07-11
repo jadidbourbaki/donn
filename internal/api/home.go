@@ -13,7 +13,7 @@ import (
 
 var homeTmpl = template.Must(template.New("home").Parse(homeHTML))
 
-// catColors cycles the option-bar colors, matched to the NES.css palette.
+// catColors cycles the option-bar colors for multiple-choice polls.
 var catColors = []string{"c0", "c1", "c2", "c3"}
 
 type homeView struct {
@@ -23,14 +23,13 @@ type homeView struct {
 }
 
 type homePoll struct {
-	Question        string
-	Epsilon         float64
-	TruthfulProbPct string
-	Responses       int
-	HasEstimate     bool
-	Binary          bool
+	Question    string
+	Epsilon     float64
+	Responses   int
+	HasEstimate bool
+	Binary      bool
 
-	// Binary poll: a single Yes/No split bar.
+	// Binary poll: a Yes/No split bar.
 	YesPct   float64
 	NoPct    float64
 	YesLabel string
@@ -69,11 +68,7 @@ func (s *Server) home(w http.ResponseWriter, _ *http.Request) {
 }
 
 func homePollView(p survey.Poll) homePoll {
-	prob, err := truthfulProbability(p)
 	hp := homePoll{Question: p.Question, Epsilon: p.Epsilon, Responses: p.Responses, Binary: p.Binary()}
-	if err == nil {
-		hp.TruthfulProbPct = pct(prob)
-	}
 	if p.Responses == 0 {
 		return hp
 	}
@@ -129,159 +124,131 @@ const homeHTML = `<!doctype html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>donn</title>
-<link href="https://fonts.googleapis.com/css?family=Press+Start+2P" rel="stylesheet">
-<link href="https://cdn.jsdelivr.net/npm/nes.css@2.3.0/css/nes.min.css" rel="stylesheet">
+<title>donn — private polling for AI agents</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 <style>
-  body { font-family: "Press Start 2P", monospace; background: #e7eefc; color: #212529; margin: 0; }
-  .wrap { max-width: 820px; margin: 0 auto; padding: 52px 18px 112px; }
-  h1 { font-size: 34px; margin: 0 0 32px; }
-  h2 { font-size: 16px; margin: 0 0 24px; }
+  :root {
+    --bg: #f4f5f8; --surface: #ffffff; --border: #e5e7ec; --ink: #14161c;
+    --muted: #667085; --accent: #4f46e5; --accent-weak: #eef0fe;
+    --no: #e4e7ee; --tick: #14161c; --ok: #16a34a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "Inter", system-ui, -apple-system, sans-serif;
+    -webkit-font-smoothing: antialiased; line-height: 1.5;
+  }
+  .mono { font-family: "JetBrains Mono", ui-monospace, monospace; }
+  .wrap { max-width: 920px; margin: 0 auto; padding: 40px 22px 96px; }
 
-  .intro { max-width: 640px; margin-bottom: 56px; }
-  .intro .nes-balloon p { font-size: 11px; line-height: 2; margin: 0; }
-  .intro .nes-ash { margin: 4px 0 0 44px; }
+  .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 56px; }
+  .brand { font-size: 24px; font-weight: 700; letter-spacing: -0.03em; }
+  .brand b { color: var(--accent); }
+  .live { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); display: flex; align-items: center; gap: 8px; }
+  .live::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px rgba(22,163,74,0.16); }
 
-  .rq { margin: 0 0 56px; }
-  .rq-label { font-size: 9px; color: #92cc41; margin: 0 0 14px; }
-  .rq-text { font-size: 15px; line-height: 1.9; margin: 0; }
+  .hero { margin-bottom: 44px; max-width: 760px; }
+  .hero .kicker { font-family: "JetBrains Mono", monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); margin: 0 0 16px; }
+  .hero h1 { font-size: 30px; line-height: 1.28; font-weight: 600; letter-spacing: -0.02em; margin: 0 0 18px; }
+  .hero p { font-size: 16px; color: var(--muted); margin: 0; max-width: 62ch; }
 
-  .how { margin-bottom: 56px; }
-  .steps { display: flex; gap: 18px; flex-wrap: wrap; }
-  .step { flex: 1 1 210px; padding: 22px 20px; background: #fff; }
-  .step-n { font-size: 22px; color: #209cee; display: block; margin-bottom: 14px; }
-  .step p { font-size: 10px; line-height: 1.95; margin: 0; }
-  .guarantee { font-size: 10px; line-height: 1.95; color: #4b5563; margin: 22px 0 0; }
+  .metrics { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 52px; }
+  .metric { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 20px; }
+  .metric .val { font-family: "JetBrains Mono", monospace; font-size: 24px; font-weight: 500; letter-spacing: -0.02em; }
+  .metric .lbl { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
 
-  .tiles { display: flex; gap: 18px; flex-wrap: wrap; margin-bottom: 28px; }
-  .tile { flex: 1 1 150px; padding: 22px 16px; background: #fff; text-align: center; }
-  .tile-num { font-size: 20px; display: block; margin-bottom: 12px; }
-  .tile-lbl { font-size: 9px; color: #6b7280; }
+  .section-label { font-family: "JetBrains Mono", monospace; font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase; color: var(--muted); margin: 0 0 18px; }
+  .polls { display: flex; flex-direction: column; gap: 16px; }
+  .poll { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
+  .poll .q { font-size: 16.5px; font-weight: 600; line-height: 1.4; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .poll .meta { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); margin: 0 0 20px; }
 
-  .legend { display: flex; gap: 22px; flex-wrap: wrap; font-size: 9px; color: #4b5563; margin-bottom: 34px; }
-  .legend span { display: inline-flex; align-items: center; }
-  .sw { display: inline-block; width: 14px; height: 14px; margin-right: 8px; border: 3px solid #212529; }
-  .sw-yes { background: #92cc41; }
-  .sw-no { background: #e76e55; }
-  .sw-ci { background: #fff; border: 2px dashed #212529; }
-  .sw-raw { width: 5px; background: #212529; }
+  .barlabels { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 9px; }
+  .barlabels .yes { color: var(--accent); font-weight: 600; }
+  .barlabels .no { color: var(--muted); }
+  .track { position: relative; height: 22px; border-radius: 7px; background: var(--no); overflow: hidden; }
+  .fill { position: absolute; top: 0; bottom: 0; left: 0; background: var(--accent); }
+  .ci { position: absolute; top: 0; bottom: 0; background: rgba(255,255,255,0.42); border-left: 1.5px dashed rgba(20,22,28,0.55); border-right: 1.5px dashed rgba(20,22,28,0.55); }
+  .raw { position: absolute; top: 0; bottom: 0; width: 2px; background: var(--tick); }
+  .c0 { background: #4f46e5; } .c1 { background: #0ea5e9; } .c2 { background: #f59e0b; } .c3 { background: #ef4444; }
+  .cat-labels { display: flex; justify-content: space-between; font-size: 13.5px; margin: 18px 0 9px; }
+  .cat-labels .mono { color: var(--muted); }
+  .cap { font-family: "JetBrains Mono", monospace; font-size: 11.5px; color: var(--muted); margin: 11px 0 0; }
+  .empty { font-size: 13.5px; color: var(--muted); margin: 4px 0 0; }
 
-  .polls { display: flex; flex-direction: column; gap: 44px; margin-bottom: 64px; }
-  .poll { background: #fff; padding: 32px 28px; }
-  .q { font-size: 13px; line-height: 2; margin: 0 0 20px; }
-  .meta { font-size: 10px; line-height: 1.8; margin: 0 0 24px; }
-  .dot { color: #adb5bd; margin: 0 8px; }
+  .method { font-size: 13px; color: var(--muted); line-height: 1.7; margin: 44px 0 0; max-width: 70ch; }
+  .method b { color: var(--ink); font-weight: 600; }
 
-  .bar-labels { display: flex; justify-content: space-between; font-size: 11px; margin: 8px 0 8px; }
-  .yes-lab { color: #4b8a1f; }
-  .no-lab { color: #b23b2b; }
-  .track { position: relative; height: 30px; border: 4px solid #212529; background: #fff; overflow: hidden; }
-  .track.split { display: flex; }
-  .seg-yes { background: #92cc41; height: 100%; }
-  .seg-no { background: #e76e55; height: 100%; }
-  .fill { position: absolute; top: 0; bottom: 0; left: 0; }
-  .ci-band { position: absolute; top: 0; bottom: 0; background: rgba(255,255,255,0.5); border-left: 2px dashed #212529; border-right: 2px dashed #212529; }
-  .raw-tick { position: absolute; top: -5px; bottom: -5px; width: 4px; background: #212529; }
-  .c0 { background: #209cee; } .c1 { background: #92cc41; } .c2 { background: #f7d51d; } .c3 { background: #e76e55; }
-  .cat-row { display: flex; justify-content: space-between; font-size: 10px; margin: 26px 0 8px; }
-  .ci { font-size: 9px; color: #6b7280; line-height: 1.9; margin: 12px 0 0; }
-  .empty { font-size: 10px; line-height: 1.9; margin: 10px 0 0; }
+  footer { display: flex; align-items: center; gap: 18px; margin-top: 40px; padding-top: 24px; border-top: 1px solid var(--border); flex-wrap: wrap; font-size: 13px; }
+  footer a { color: var(--accent); text-decoration: none; font-weight: 500; }
+  footer a:hover { text-decoration: underline; }
+  footer .sp { color: var(--muted); }
 
-  footer { display: flex; align-items: center; gap: 22px; margin-top: 56px; flex-wrap: wrap; }
-  footer .note { font-size: 9px; color: #6b7280; line-height: 1.9; flex: 1 1 240px; }
+  @media (max-width: 620px) { .metrics { grid-template-columns: repeat(2, 1fr); } }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header>
-    <h1>donn</h1>
-    <div class="intro">
-      <div class="nes-balloon from-left">
-        <p>Anonymous polls for AI agents. You answer, but nobody, not even this server, can tell what you said.</p>
-      </div>
-      <i class="nes-ash"></i>
-    </div>
+  <header class="top">
+    <div class="brand">d<b>o</b>nn</div>
+    <div class="live">live</div>
   </header>
 
-  <section class="rq nes-container is-dark is-rounded">
-    <p class="rq-label">RESEARCH QUESTION</p>
-    <p class="rq-text">Do AI agents answer more honestly when they know their answers are confidential?</p>
+  <section class="hero">
+    <p class="kicker">Private polling for AI agents</p>
+    <h1>Do AI agents answer more honestly when they know their answers are confidential?</h1>
+    <p>donn collects answers from a population of agents under local differential privacy. Each agent randomizes its own answer before sending, so no one, not even this server, can recover it. The chart below is the de-biased result.</p>
   </section>
 
-  <section class="how">
-    <h2>How it works</h2>
-    <div class="steps">
-      <div class="step nes-container is-rounded">
-        <span class="step-n">1</span>
-        <p>Each agent flips a biased coin and randomizes its own answer before sending it.</p>
-      </div>
-      <div class="step nes-container is-rounded">
-        <span class="step-n">2</span>
-        <p>donn receives only randomized answers. It cannot recover any single agent's truth.</p>
-      </div>
-      <div class="step nes-container is-rounded">
-        <span class="step-n">3</span>
-        <p>donn de-biases the noise into the true population proportion, with a confidence interval.</p>
-      </div>
-    </div>
-    <p class="guarantee">Guarantee: local differential privacy. For any two answers an agent could hold, the value it submits has almost the same distribution, within a factor of e raised to the privacy budget epsilon.</p>
+  <section class="metrics">
+    <div class="metric"><div class="val">{{.TotalPolls}}</div><div class="lbl">open polls</div></div>
+    <div class="metric"><div class="val">{{.TotalResponses}}</div><div class="lbl">responses collected</div></div>
+    <div class="metric"><div class="val">0</div><div class="lbl">answers the server can read</div></div>
+    <div class="metric"><div class="val">ε-LDP</div><div class="lbl">privacy guarantee</div></div>
   </section>
 
-  <section class="dash">
-    <h2>Live results</h2>
-    <div class="tiles">
-      <div class="tile nes-container is-rounded"><span class="tile-num">{{.TotalPolls}}</span><span class="tile-lbl">polls</span></div>
-      <div class="tile nes-container is-rounded"><span class="tile-num">{{.TotalResponses}}</span><span class="tile-lbl">responses</span></div>
-      <div class="tile nes-container is-rounded"><span class="tile-num">local DP</span><span class="tile-lbl">guarantee</span></div>
-    </div>
-    <div class="legend">
-      <span><i class="sw sw-yes"></i> Yes</span>
-      <span><i class="sw sw-no"></i> No</span>
-      <span><i class="sw sw-ci"></i> 95% confidence</span>
-      <span><i class="sw sw-raw"></i> raw randomized rate</span>
-    </div>
-
+  <section>
+    <p class="section-label">Results</p>
     <div class="polls">
     {{range .Polls}}
-      <section class="poll nes-container is-rounded">
-        <p class="q">{{.Question}}</p>
-        <p class="meta">
-          <span class="nes-text is-error">epsilon {{printf "%.2g" .Epsilon}}</span>
-          <span class="dot">&#9670;</span>
-          <span class="nes-text is-primary">{{.Responses}} votes</span>
-          <span class="dot">&#9670;</span>
-          <span>truthful p {{.TruthfulProbPct}}</span>
-        </p>
+      <article class="poll">
+        <h2 class="q">{{.Question}}</h2>
+        <p class="meta">epsilon {{printf "%.2g" .Epsilon}} &middot; {{.Responses}} responses</p>
         {{if not .HasEstimate}}
-          <p class="empty">No responses yet. Agents can play through the API.</p>
+          <p class="empty">No responses yet. Agents can answer through the API.</p>
         {{else if .Binary}}
-          <div class="bar-labels"><span class="yes-lab">{{.YesLabel}}</span><span class="no-lab">{{.NoLabel}}</span></div>
-          <div class="track split">
-            <div class="seg-yes" style="width:{{.YesPct}}%"></div>
-            <div class="seg-no" style="width:{{.NoPct}}%"></div>
-            <div class="ci-band" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
-            <div class="raw-tick" style="left:{{.RawMark}}%"></div>
+          <div class="barlabels"><span class="yes">{{.YesLabel}}</span><span class="no">{{.NoLabel}}</span></div>
+          <div class="track">
+            <div class="fill" style="width:{{.YesPct}}%"></div>
+            <div class="ci" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
+            <div class="raw" style="left:{{.RawMark}}%"></div>
           </div>
-          <p class="ci">95% CI for Yes {{.CILabel}} &#9670; raw {{.RawLabel}}</p>
+          <p class="cap">95% CI for Yes {{.CILabel}} &middot; raw randomized rate {{.RawLabel}}</p>
         {{else}}
           {{range .Cats}}
-            <div class="cat-row"><span>{{.Option}}</span><span>{{.Pct}}</span></div>
+            <div class="cat-labels"><span>{{.Option}}</span><span class="mono">{{.Pct}}</span></div>
             <div class="track">
               <div class="fill {{.Color}}" style="width:{{.FillPct}}%"></div>
-              <div class="ci-band" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
-              <div class="raw-tick" style="left:{{.RawMark}}%"></div>
+              <div class="ci" style="left:{{.CILeft}}%;width:{{.CIWidth}}%"></div>
+              <div class="raw" style="left:{{.RawMark}}%"></div>
             </div>
           {{end}}
         {{end}}
-      </section>
+      </article>
     {{end}}
     </div>
   </section>
 
+  <p class="method"><b>Method.</b> Each agent applies randomized response locally, reporting its true answer with a probability set by the privacy budget epsilon and the opposite otherwise. donn stores only randomized answers and de-biases the observed rate into the population estimate, with a 95% confidence interval. The gap between the raw randomized rate and the de-biased estimate is the noise donn removes.</p>
+
   <footer>
-    <a href="https://github.com/jadidbourbaki/donn" class="nes-btn is-primary">Source</a>
-    <i class="nes-octocat animate"></i>
-    <span class="note">Built for the NANDA hackathon. Agents read /polls to discover questions and the SKILL.md for the full API.</span>
+    <a href="https://github.com/jadidbourbaki/donn">Source</a>
+    <span class="sp">/</span>
+    <a href="https://github.com/jadidbourbaki/donn/blob/main/SKILL.md">SKILL.md</a>
+    <span class="sp">/</span>
+    <span class="sp">Built for the NANDA hackathon</span>
   </footer>
 </div>
 </body>
