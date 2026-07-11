@@ -35,6 +35,7 @@ func main() {
 	region := flag.String("region", "us-east-1", "AWS region for Bedrock")
 	generate := flag.Int("generate", 0, "generate this many extra questions with a model")
 	curated := flag.Bool("curated", true, "include the built-in questions")
+	haikuOnly := flag.Bool("haiku", false, "use only Claude Haiku, for the propose-and-answer experiment")
 	flag.Parse()
 
 	anthropicKey := os.Getenv("ANTHROPIC_API_KEY")
@@ -53,6 +54,9 @@ func main() {
 		{"Claude Haiku 4.5", anthropic},
 		{"Qwen3 Next 80B", bedrock("qwen.qwen3-next-80b-a3b", 8)},
 		{"Mistral Large", bedrock("mistral.mistral-large-2402-v1:0", 5)},
+	}
+	if *haikuOnly {
+		models = models[:1]
 	}
 
 	ctx := context.Background()

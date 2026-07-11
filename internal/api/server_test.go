@@ -39,8 +39,8 @@ func TestServer_Stats(t *testing.T) {
 
 	var out statsResponse
 	require.NoError(t, json.NewDecoder(resp.Body).Decode(&out))
-	assert.Equal(t, 6, out.Polls)
-	assert.Equal(t, 1200, out.Responses)
+	assert.Equal(t, 9, out.Polls)
+	assert.Equal(t, 1350, out.Responses)
 }
 
 func TestServer_ListPollsExposesSeededQuestions(t *testing.T) {

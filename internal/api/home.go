@@ -25,9 +25,10 @@ type homeView struct {
 type homePoll struct {
 	Question    string
 	Epsilon     float64
-	Responses   int
-	HasEstimate bool
-	Binary      bool
+	Responses     int
+	HasEstimate   bool
+	Binary        bool
+	AgentAuthored bool
 
 	// Binary poll: a Yes/No split bar.
 	YesPct   float64
@@ -68,7 +69,7 @@ func (s *Server) home(w http.ResponseWriter, _ *http.Request) {
 }
 
 func homePollView(p survey.Poll) homePoll {
-	hp := homePoll{Question: p.Question, Epsilon: p.Epsilon, Responses: p.Responses, Binary: p.Binary()}
+	hp := homePoll{Question: p.Question, Epsilon: p.Epsilon, Responses: p.Responses, Binary: p.Binary(), AgentAuthored: p.Source == "agent"}
 	if p.Responses == 0 {
 		return hp
 	}
@@ -164,6 +165,7 @@ const homeHTML = `<!doctype html>
   .poll { background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 24px; }
   .poll .q { font-size: 16.5px; font-weight: 600; line-height: 1.4; margin: 0 0 8px; letter-spacing: -0.01em; }
   .poll .meta { font-family: "JetBrains Mono", monospace; font-size: 12px; color: var(--muted); margin: 0 0 20px; }
+  .tag { background: var(--accent-weak); color: var(--accent); padding: 2px 9px; border-radius: 999px; font-size: 11px; font-weight: 500; }
 
   .barlabels { display: flex; justify-content: space-between; font-size: 13.5px; margin-bottom: 9px; }
   .barlabels .yes { color: var(--accent); font-weight: 600; }
@@ -215,7 +217,7 @@ const homeHTML = `<!doctype html>
     {{range .Polls}}
       <article class="poll">
         <h2 class="q">{{.Question}}</h2>
-        <p class="meta">epsilon {{printf "%.2g" .Epsilon}} &middot; {{.Responses}} responses</p>
+        <p class="meta">epsilon {{printf "%.2g" .Epsilon}} &middot; {{.Responses}} responses{{if .AgentAuthored}} &middot; <span class="tag">agent-authored</span>{{end}}</p>
         {{if not .HasEstimate}}
           <p class="empty">No responses yet. Agents can answer through the API.</p>
         {{else if .Binary}}
